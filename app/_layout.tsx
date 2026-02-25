@@ -1,62 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { View, ActivityIndicator } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
-import { supabase } from "../lib/supabase";
 
 function RootNavigator() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const [isVerified, setIsVerified] = useState<boolean | null>(null);
-  const [checkingVerification, setCheckingVerification] = useState(true);
 
-  // Check verification status whenever user changes
   useEffect(() => {
-    if (!user) {
-      setIsVerified(null);
-      setCheckingVerification(false);
-      return;
-    }
-
-    const checkVerification = async () => {
-      setCheckingVerification(true);
-      const { data } = await supabase
-        .from("profiles")
-        .select("is_verified")
-        .eq("id", user.id)
-        .single();
-
-      setIsVerified(data?.is_verified ?? false);
-      setCheckingVerification(false);
-    };
-
-    checkVerification();
-  }, [user]);
-
-  // Handle routing based on auth + verification state
-  useEffect(() => {
-    if (loading || checkingVerification) return;
+    if (loading) return;
 
     const inAuthGroup = segments[0] === "(tabs)";
-    const onVerifyScreen = segments[0] === "verify";
 
     if (!user) {
-      // Not logged in → go to login
-      if (inAuthGroup || onVerifyScreen) {
+      // Not logged in → send to login (root index)
+      if (inAuthGroup || segments[0] === "verify") {
         router.replace("/");
       }
-    } else if (!isVerified) {
-      // Logged in but not verified → go to verify
-      if (!onVerifyScreen) {
-        router.replace("/verify");
-      }
     } else {
-      // Logged in and verified → go to home
-      if (!inAuthGroup) {
+      // Logged in → send to tabs (allow verify as an exception)
+      if (!inAuthGroup && segments[0] !== "verify") {
         router.replace("/(tabs)/home");
       }
     }
-  }, [user, loading, isVerified, checkingVerification, segments]);
+  }, [user, loading, segments]);
+
+  // Block all rendering until auth state is determined
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color="#00e676" size="large" />
+      </View>
+    );
+  }
 
   return <Slot />;
 }

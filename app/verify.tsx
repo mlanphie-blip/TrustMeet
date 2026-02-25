@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  ScrollView,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
 import { router } from "expo-router";
@@ -16,10 +18,81 @@ import { router } from "expo-router";
 export default function VerifyScreen() {
   const { user } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [selfieUri, setSelfieUri] = useState<string | null>(null);
+  const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [step, setStep] = useState<"intro" | "camera" | "preview">("intro");
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [step, setStep] = useState<
+    "upload" | "camera" | "preview" | "confirm"
+  >("upload");
   const cameraRef = useRef<CameraView>(null);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      router.replace("/");
+    }
+  }, [user]);
+
+  // Load existing reference photo from profile
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("photo_url")
+        .eq("id", user.id)
+        .single();
+      if (data?.photo_url) {
+        setReferenceUrl(data.photo_url);
+      }
+      setLoadingProfile(false);
+    };
+    load();
+  }, [user]);
+
+  const pickReferencePhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled && user) {
+      const file = result.assets[0];
+      const fileExt = file.uri.split(".").pop() || "jpg";
+      const filePath = `${user.id}/reference.${fileExt}`;
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: file.uri,
+        name: `reference.${fileExt}`,
+        type: `image/${fileExt}`,
+      } as any);
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, formData, { upsert: true });
+
+      if (uploadError) {
+        Alert.alert("Upload Error", uploadError.message);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      // Save as profile photo_url
+      await supabase
+        .from("profiles")
+        .update({ photo_url: urlData.publicUrl })
+        .eq("id", user.id);
+
+      setReferenceUrl(urlData.publicUrl);
+    }
+  };
 
   const takeSelfie = async () => {
     if (!cameraRef.current) return;
@@ -28,62 +101,40 @@ export default function VerifyScreen() {
       base64: false,
     });
     if (result) {
-      setPhoto(result.uri);
-      setStep("preview");
+      setSelfieUri(result.uri);
+      setStep("confirm");
     }
   };
 
   const submitVerification = async () => {
-    if (!photo || !user) return;
+    if (!selfieUri || !user) return;
     setVerifying(true);
 
     try {
-      // Upload the selfie to Supabase storage
-      const fileExt = "jpg";
-      const filePath = `${user.id}/verification.${fileExt}`;
+      // Upload the selfie
+      const filePath = `${user.id}/verification.jpg`;
 
-      const response = await fetch(photo);
-      const blob = await response.blob();
+      const formData = new FormData();
+      formData.append("file", {
+        uri: selfieUri,
+        name: "verification.jpg",
+        type: "image/jpeg",
+      } as any);
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(filePath, blob, {
-          upsert: true,
-          contentType: "image/jpeg",
-        });
+        .upload(filePath, formData, { upsert: true });
 
       if (uploadError) {
-        // Try FormData approach as fallback (works better on mobile)
-        const formData = new FormData();
-        formData.append("file", {
-          uri: photo,
-          name: `verification.${fileExt}`,
-          type: `image/${fileExt}`,
-        } as any);
-
-        const { error: retryError } = await supabase.storage
-          .from("avatars")
-          .upload(filePath, formData, { upsert: true });
-
-        if (retryError) {
-          Alert.alert("Upload Error", retryError.message);
-          setVerifying(false);
-          return;
-        }
+        Alert.alert("Upload Error", uploadError.message);
+        setVerifying(false);
+        return;
       }
 
-      // Get public URL for the selfie
-      const { data: urlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
-
-      // Update profile: set photo_url and mark as verified
+      // Mark as verified
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({
-          photo_url: urlData.publicUrl,
-          is_verified: true,
-        })
+        .update({ is_verified: true })
         .eq("id", user.id);
 
       if (updateError) {
@@ -94,8 +145,8 @@ export default function VerifyScreen() {
 
       Alert.alert(
         "Verified!",
-        "You've been verified as a real person. Welcome to TrustMeet!",
-        [{ text: "Let's go", onPress: () => router.replace("/(tabs)/home") }]
+        "Your identity has been verified. You now have a verified badge on your profile!",
+        [{ text: "View Profile", onPress: () => router.replace("/(tabs)/profile") }]
       );
     } catch (error: any) {
       Alert.alert("Error", error.message || "Something went wrong");
@@ -104,8 +155,8 @@ export default function VerifyScreen() {
     }
   };
 
-  // Permission not yet determined
-  if (!permission) {
+  // Don't render anything if not logged in
+  if (!user) {
     return (
       <View style={styles.container}>
         <ActivityIndicator color="#00e676" size="large" />
@@ -113,50 +164,84 @@ export default function VerifyScreen() {
     );
   }
 
-  // Permission denied
-  if (!permission.granted && step !== "intro") {
+  if (loadingProfile) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Camera Access Needed</Text>
-        <Text style={styles.subtitle}>
-          TrustMeet needs your camera to verify you're a real person.
-        </Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Camera Access</Text>
-        </TouchableOpacity>
+        <ActivityIndicator color="#00e676" size="large" />
       </View>
     );
   }
 
-  // Step 1: Intro
-  if (step === "intro") {
+  // Step 1: Upload reference photo
+  if (step === "upload") {
     return (
       <View style={styles.container}>
+        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+          <Text style={styles.closeText}>Cancel</Text>
+        </TouchableOpacity>
+
         <View style={styles.iconCircle}>
           <Text style={styles.iconEmoji}>🛡️</Text>
         </View>
-        <Text style={styles.title}>Verify You're Real</Text>
+        <Text style={styles.title}>Verify Your Identity</Text>
         <Text style={styles.subtitle}>
-          Take a quick selfie to prove you're a real, living human. This keeps
-          TrustMeet safe for everyone.
+          First, upload a clear photo of yourself. Then you'll take a selfie to
+          confirm your identity.
         </Text>
 
-        <View style={styles.bulletList}>
-          <Text style={styles.bullet}>• Takes just a few seconds</Text>
-          <Text style={styles.bullet}>• Your photo is stored securely</Text>
-          <Text style={styles.bullet}>• Only visible to people you meet</Text>
-        </View>
+        {referenceUrl ? (
+          <View style={styles.referenceContainer}>
+            <Image
+              source={{ uri: `${referenceUrl}?t=${Date.now()}` }}
+              style={styles.referenceImage}
+            />
+            <Text style={styles.referenceLabel}>Your reference photo</Text>
+            <TouchableOpacity onPress={pickReferencePhoto}>
+              <Text style={styles.changePhotoText}>Change photo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.uploadBox}
+            onPress={pickReferencePhoto}
+          >
+            <Text style={styles.uploadIcon}>+</Text>
+            <Text style={styles.uploadText}>Upload a photo of yourself</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, !referenceUrl && styles.buttonDisabled]}
+          disabled={!referenceUrl}
           onPress={async () => {
-            if (!permission.granted) {
+            if (!permission?.granted) {
               await requestPermission();
             }
             setStep("camera");
           }}
         >
-          <Text style={styles.buttonText}>Start Verification</Text>
+          <Text style={styles.buttonText}>Next: Take Selfie</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Permission denied
+  if (!permission?.granted && step === "camera") {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Camera Access Needed</Text>
+        <Text style={styles.subtitle}>
+          TrustMeet needs your camera to take a verification selfie.
+        </Text>
+        <TouchableOpacity style={styles.button} onPress={requestPermission}>
+          <Text style={styles.buttonText}>Grant Camera Access</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.backLink}
+          onPress={() => setStep("upload")}
+        >
+          <Text style={styles.backLinkText}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -166,11 +251,7 @@ export default function VerifyScreen() {
   if (step === "camera") {
     return (
       <View style={styles.cameraContainer}>
-        <CameraView
-          ref={cameraRef}
-          style={styles.camera}
-          facing="front"
-        >
+        <CameraView ref={cameraRef} style={styles.camera} facing="front">
           <View style={styles.cameraOverlay}>
             <View style={styles.faceGuide} />
             <Text style={styles.cameraHint}>
@@ -182,7 +263,7 @@ export default function VerifyScreen() {
         <View style={styles.cameraControls}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => setStep("intro")}
+            onPress={() => setStep("upload")}
           >
             <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
@@ -195,23 +276,43 @@ export default function VerifyScreen() {
     );
   }
 
-  // Step 3: Preview & Submit
+  // Step 3: Confirm — show reference + selfie side by side
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Looking Good!</Text>
+    <ScrollView
+      style={styles.scrollContainer}
+      contentContainerStyle={styles.confirmContent}
+    >
+      <Text style={styles.title}>Confirm Your Identity</Text>
       <Text style={styles.subtitle}>
-        Make sure your face is clearly visible
+        Make sure the selfie matches your uploaded photo
       </Text>
 
-      {photo && (
-        <Image source={{ uri: photo }} style={styles.previewImage} />
-      )}
+      <View style={styles.comparisonRow}>
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Reference</Text>
+          {referenceUrl && (
+            <Image
+              source={{ uri: `${referenceUrl}?t=${Date.now()}` }}
+              style={styles.comparisonImage}
+            />
+          )}
+        </View>
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Selfie</Text>
+          {selfieUri && (
+            <Image
+              source={{ uri: selfieUri }}
+              style={styles.comparisonImage}
+            />
+          )}
+        </View>
+      </View>
 
       <View style={styles.previewButtons}>
         <TouchableOpacity
           style={styles.retakeButton}
           onPress={() => {
-            setPhoto(null);
+            setSelfieUri(null);
             setStep("camera");
           }}
         >
@@ -226,11 +327,11 @@ export default function VerifyScreen() {
           {verifying ? (
             <ActivityIndicator color="#000" />
           ) : (
-            <Text style={styles.buttonText}>Verify Me</Text>
+            <Text style={styles.buttonText}>Confirm & Verify</Text>
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -240,6 +341,24 @@ const styles = StyleSheet.create({
     backgroundColor: "#0a0a0a",
     justifyContent: "center",
     padding: 30,
+  },
+  scrollContainer: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+  },
+  confirmContent: {
+    padding: 30,
+    paddingTop: 80,
+  },
+  closeButton: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    zIndex: 10,
+  },
+  closeText: {
+    color: "#aaa",
+    fontSize: 16,
   },
   iconCircle: {
     width: 100,
@@ -270,14 +389,51 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginBottom: 24,
   },
-  bulletList: {
-    marginBottom: 40,
-    paddingHorizontal: 10,
+  // Reference photo upload
+  referenceContainer: {
+    alignItems: "center",
+    marginBottom: 30,
   },
-  bullet: {
-    color: "#ccc",
-    fontSize: 15,
-    lineHeight: 28,
+  referenceImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    borderWidth: 3,
+    borderColor: "#00e676",
+    marginBottom: 10,
+  },
+  referenceLabel: {
+    color: "#888",
+    fontSize: 13,
+  },
+  changePhotoText: {
+    color: "#00e676",
+    fontSize: 14,
+    marginTop: 6,
+  },
+  uploadBox: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    borderWidth: 2,
+    borderColor: "#333",
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+    marginBottom: 30,
+    backgroundColor: "#1a1a1a",
+  },
+  uploadIcon: {
+    color: "#555",
+    fontSize: 36,
+    marginBottom: 4,
+  },
+  uploadText: {
+    color: "#888",
+    fontSize: 12,
+    textAlign: "center",
+    paddingHorizontal: 10,
   },
   button: {
     backgroundColor: "#00e676",
@@ -285,10 +441,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
+  buttonDisabled: {
+    backgroundColor: "#333",
+  },
   buttonText: {
     color: "#000",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  backLink: {
+    marginTop: 20,
+    alignItems: "center",
+  },
+  backLinkText: {
+    color: "#aaa",
+    fontSize: 15,
   },
   // Camera styles
   cameraContainer: {
@@ -348,14 +515,26 @@ const styles = StyleSheet.create({
     color: "#aaa",
     fontSize: 16,
   },
-  // Preview styles
-  previewImage: {
-    width: 250,
-    height: 320,
-    borderRadius: 125,
-    alignSelf: "center",
+  // Comparison / Confirm styles
+  comparisonRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 20,
     marginBottom: 30,
-    borderWidth: 3,
+  },
+  comparisonItem: {
+    alignItems: "center",
+  },
+  comparisonLabel: {
+    color: "#888",
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  comparisonImage: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 2,
     borderColor: "#00e676",
   },
   previewButtons: {

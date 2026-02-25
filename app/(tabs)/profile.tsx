@@ -11,6 +11,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { router } from "expo-router";
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
@@ -18,6 +19,7 @@ export default function ProfileScreen() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [trustScore, setTrustScore] = useState(100);
   const [meetsCount, setMeetsCount] = useState(0);
+  const [isVerified, setIsVerified] = useState(false);
 
   useEffect(() => {
     if (user) fetchProfile();
@@ -35,6 +37,7 @@ export default function ProfileScreen() {
       setPhotoUrl(data.photo_url || null);
       setTrustScore(data.trust_score);
       setMeetsCount(data.meets_count);
+      setIsVerified(data.is_verified ?? false);
     } else {
       // Create profile if it doesn't exist
       await supabase.from("profiles").insert({
@@ -123,7 +126,32 @@ export default function ProfileScreen() {
             <Text style={styles.avatarText}>Tap to add photo</Text>
           </View>
         )}
+        {isVerified && (
+          <View style={styles.verifiedBadge}>
+            <Text style={styles.verifiedCheck}>✓</Text>
+          </View>
+        )}
       </TouchableOpacity>
+
+      {/* Verification Status */}
+      {isVerified ? (
+        <View style={styles.verifiedRow}>
+          <Text style={styles.verifiedIcon}>✓</Text>
+          <Text style={styles.verifiedText}>ID Verified</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.getVerifiedButton}
+          onPress={() => router.push("/verify")}
+        >
+          <Text style={styles.getVerifiedText}>Get Verified</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Debug: remove this later */}
+      <Text style={{ color: "#ff5252", textAlign: "center", fontSize: 12, marginBottom: 10 }}>
+        verified={String(isVerified)}
+      </Text>
 
       {/* Trust Score */}
       <View style={styles.statsRow}>
@@ -183,7 +211,7 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 10,
   },
   avatar: {
     width: 120,
@@ -206,6 +234,61 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 12,
     textAlign: "center",
+  },
+  verifiedBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#00e676",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#0a0a0a",
+  },
+  verifiedCheck: {
+    color: "#000",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  verifiedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0d2e1a",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignSelf: "center",
+    marginBottom: 20,
+    gap: 6,
+  },
+  verifiedIcon: {
+    color: "#00e676",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  verifiedText: {
+    color: "#00e676",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  getVerifiedButton: {
+    alignSelf: "center",
+    backgroundColor: "#1a1a1a",
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#00e676",
+    marginBottom: 20,
+  },
+  getVerifiedText: {
+    color: "#00e676",
+    fontSize: 14,
+    fontWeight: "600",
   },
   statsRow: {
     flexDirection: "row",
