@@ -10,7 +10,6 @@ import {
   Platform,
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
-import { router } from "expo-router";
 
 export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
@@ -30,7 +29,7 @@ export default function LoginScreen() {
         Alert.alert("Success", "Check your email to confirm your account!");
       } else {
         await signIn(email, password);
-        router.replace("/(tabs)/home");
+        // Routing is handled automatically by _layout.tsx
       }
     } catch (error: any) {
       Alert.alert("Error", error.message);
