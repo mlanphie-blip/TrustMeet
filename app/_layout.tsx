@@ -21,7 +21,7 @@ function RootNavigator() {
     } else {
       // Logged in → send to tabs (allow verify as an exception)
       if (!inAuthGroup && segments[0] !== "verify") {
-        router.replace("/(tabs)/home");
+        router.replace("/(tabs)/profile");
       }
     }
   }, [user, loading, segments]);

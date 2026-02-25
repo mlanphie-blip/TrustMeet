@@ -1,29 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Image,
+  Share,
+  ScrollView,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [handle, setHandle] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [trustScore, setTrustScore] = useState(100);
   const [meetsCount, setMeetsCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
 
-  useEffect(() => {
-    if (user) fetchProfile();
-  }, [user]);
+  // Re-fetch profile every time the tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user) fetchProfile();
+    }, [user])
+  );
 
   const fetchProfile = async () => {
     const { data } = await supabase
@@ -39,7 +42,6 @@ export default function ProfileScreen() {
       setMeetsCount(data.meets_count);
       setIsVerified(data.is_verified ?? false);
     } else {
-      // Create profile if it doesn't exist
       await supabase.from("profiles").insert({
         id: user?.id,
         handle: "",
@@ -49,81 +51,27 @@ export default function ProfileScreen() {
     }
   };
 
-  const updateHandle = async () => {
-    const { error } = await supabase
-      .from("profiles")
-      .update({ handle })
-      .eq("id", user?.id);
-
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      Alert.alert("Success", "Handle updated!");
-    }
-  };
-
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-
-    if (!result.canceled) {
-      const file = result.assets[0];
-      const fileExt = file.uri.split(".").pop();
-      const filePath = `${user?.id}/avatar.${fileExt}`;
-
-      const formData = new FormData();
-      formData.append("file", {
-        uri: file.uri,
-        name: `avatar.${fileExt}`,
-        type: `image/${fileExt}`,
-      } as any);
-
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, formData, { upsert: true });
-
-      if (uploadError) {
-        Alert.alert("Error", uploadError.message);
-        return;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
-
-      await supabase
-        .from("profiles")
-        .update({ photo_url: urlData.publicUrl })
-        .eq("id", user?.id);
-
-      setPhotoUrl(urlData.publicUrl);
-      Alert.alert("Success", "Photo updated!");
-    }
-  };
-
-  const handleSignOut = async () => {
+  const shareProfile = async () => {
+    const profileUrl = `https://trustmeet.app/u/${user?.id}`;
+    const name = handle ? `@${handle}` : "a TrustMeet user";
     try {
-      await signOut();
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    }
+      await Share.share({
+        message: `${name} is verified on TrustMeet. View their profile: ${profileUrl}`,
+      });
+    } catch {}
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Profile</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.title}>TrustMeet</Text>
 
       {/* Avatar */}
-      <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
+      <View style={styles.avatarContainer}>
         {photoUrl ? (
           <Image source={{ uri: photoUrl }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>Tap to add photo</Text>
+            <Text style={styles.avatarText}>No Photo</Text>
           </View>
         )}
         {isVerified && (
@@ -131,7 +79,16 @@ export default function ProfileScreen() {
             <Text style={styles.verifiedCheck}>✓</Text>
           </View>
         )}
-      </TouchableOpacity>
+      </View>
+
+      {/* Handle */}
+      {handle ? (
+        <Text style={styles.handleText}>@{handle}</Text>
+      ) : (
+        <TouchableOpacity onPress={() => router.push("/(tabs)/settings")}>
+          <Text style={styles.noHandleText}>Tap to set a handle</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Verification Status */}
       {isVerified ? (
@@ -148,12 +105,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Debug: remove this later */}
-      <Text style={{ color: "#ff5252", textAlign: "center", fontSize: 12, marginBottom: 10 }}>
-        verified={String(isVerified)}
-      </Text>
-
-      {/* Trust Score */}
+      {/* Trust Score & Meets */}
       <View style={styles.statsRow}>
         <View style={styles.statBox}>
           <Text style={styles.statNumber}>{trustScore}</Text>
@@ -165,33 +117,17 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Handle */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Handle</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Choose a handle"
-          placeholderTextColor="#888"
-          value={handle}
-          onChangeText={setHandle}
-          autoCapitalize="none"
-        />
-        <TouchableOpacity style={styles.button} onPress={updateHandle}>
-          <Text style={styles.buttonText}>Save Handle</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Email */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.emailText}>{user?.email}</Text>
-      </View>
-
-      {/* Sign Out */}
-      <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-        <Text style={styles.signOutText}>Sign Out</Text>
+      {/* Action Buttons */}
+      <TouchableOpacity style={styles.meetupButton} onPress={() => router.push("/(tabs)/meetup")}>
+        <Text style={styles.meetupButtonText}>Start a Meetup</Text>
       </TouchableOpacity>
-    </View>
+
+      {isVerified && (
+        <TouchableOpacity style={styles.shareButton} onPress={shareProfile}>
+          <Text style={styles.shareButtonText}>Share Proof of ID</Text>
+        </TouchableOpacity>
+      )}
+    </ScrollView>
   );
 }
 
@@ -199,19 +135,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0a0a0a",
+  },
+  content: {
     padding: 20,
     paddingTop: 60,
+    alignItems: "center",
   },
   title: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#00e676",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   avatarContainer: {
-    alignSelf: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   avatar: {
     width: 120,
@@ -253,6 +191,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
+  handleText: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 8,
+  },
+  noHandleText: {
+    fontSize: 15,
+    color: "#888",
+    marginBottom: 8,
+    textDecorationLine: "underline",
+  },
   verifiedRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -261,8 +211,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 24,
     gap: 6,
   },
   verifiedIcon: {
@@ -276,14 +225,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   getVerifiedButton: {
-    alignSelf: "center",
     backgroundColor: "#1a1a1a",
     paddingVertical: 8,
     paddingHorizontal: 20,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: "#00e676",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   getVerifiedText: {
     color: "#00e676",
@@ -293,8 +241,8 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 30,
-    marginBottom: 30,
+    gap: 40,
+    marginBottom: 32,
   },
   statBox: {
     alignItems: "center",
@@ -309,50 +257,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
   },
-  section: {
-    marginBottom: 20,
-  },
-  label: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: "#1a1a1a",
-    color: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  button: {
+  meetupButton: {
     backgroundColor: "#00e676",
-    padding: 14,
-    borderRadius: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 12,
+    width: "100%",
     alignItems: "center",
+    marginBottom: 12,
   },
-  buttonText: {
+  meetupButtonText: {
     color: "#000",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
   },
-  emailText: {
-    color: "#888",
-    fontSize: 16,
-  },
-  signOutButton: {
-    marginTop: 30,
-    padding: 14,
-    borderRadius: 10,
+  shareButton: {
+    backgroundColor: "#1a1a1a",
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ff5252",
+    borderColor: "#00e676",
+    width: "100%",
     alignItems: "center",
+    marginBottom: 12,
   },
-  signOutText: {
-    color: "#ff5252",
+  shareButtonText: {
+    color: "#00e676",
     fontSize: 16,
     fontWeight: "600",
   },
