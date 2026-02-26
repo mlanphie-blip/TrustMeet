@@ -11,6 +11,7 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { router } from "expo-router";
 
 type Mode = "menu" | "generate" | "scan";
 
@@ -21,10 +22,39 @@ export default function MeetupScreen() {
   const [meets, setMeets] = useState<any[]>([]);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [meetupsUsed, setMeetupsUsed] = useState(0);
 
   useEffect(() => {
-    if (user) fetchMeets();
+    if (user) {
+      fetchMeets();
+      fetchUsage();
+    }
   }, [user]);
+
+  const fetchUsage = async () => {
+    // Check premium status
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_premium")
+      .eq("id", user?.id)
+      .single();
+
+    setIsPremium(profile?.is_premium ?? false);
+
+    // Count meetup codes generated this month
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const { count } = await supabase
+      .from("meet_codes")
+      .select("*", { count: "exact", head: true })
+      .eq("creator_id", user?.id)
+      .gte("created_at", monthStart.toISOString());
+
+    setMeetupsUsed(count ?? 0);
+  };
 
   const fetchMeets = async () => {
     const { data } = await supabase
@@ -39,6 +69,19 @@ export default function MeetupScreen() {
   };
 
   const generateCode = async () => {
+    // Check usage limit for free users
+    if (!isPremium && meetupsUsed >= 5) {
+      Alert.alert(
+        "Limit Reached",
+        "You've used all 5 free meetup codes this month. Upgrade to Premium for unlimited meetups.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Go Premium", onPress: () => router.push("/subscribe") },
+        ]
+      );
+      return;
+    }
+
     const randomCode = Math.random()
       .toString(36)
       .substring(2, 8)
@@ -55,6 +98,7 @@ export default function MeetupScreen() {
       Alert.alert("Error", error.message);
     } else {
       setMyCode(randomCode);
+      setMeetupsUsed((prev) => prev + 1);
       setMode("generate");
     }
   };
@@ -218,6 +262,9 @@ export default function MeetupScreen() {
           <Text style={styles.primaryButtonIcon}>⊞</Text>
           <Text style={styles.primaryButtonText}>Generate Code</Text>
           <Text style={styles.primaryButtonHint}>Show QR for others to scan</Text>
+          {!isPremium && (
+            <Text style={styles.usageText}>{meetupsUsed}/5 free</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.primaryButton} onPress={startScan}>
@@ -299,6 +346,11 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 11,
     textAlign: "center",
+  },
+  usageText: {
+    color: "#ffd600",
+    fontSize: 11,
+    marginTop: 6,
   },
   qrContainer: {
     backgroundColor: "#fff",

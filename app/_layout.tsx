@@ -13,14 +13,16 @@ function RootNavigator() {
 
     const inAuthGroup = segments[0] === "(tabs)";
 
+    const allowedOutsideTabs = ["verify", "subscribe"];
+
     if (!user) {
       // Not logged in → send to login (root index)
-      if (inAuthGroup || segments[0] === "verify") {
+      if (inAuthGroup || allowedOutsideTabs.includes(segments[0] as string)) {
         router.replace("/");
       }
     } else {
-      // Logged in → send to tabs (allow verify as an exception)
-      if (!inAuthGroup && segments[0] !== "verify") {
+      // Logged in → send to tabs (allow verify/subscribe as exceptions)
+      if (!inAuthGroup && !allowedOutsideTabs.includes(segments[0] as string)) {
         router.replace("/(tabs)/profile");
       }
     }

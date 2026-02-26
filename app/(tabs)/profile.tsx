@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Image,
   Share,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -20,11 +21,15 @@ export default function ProfileScreen() {
   const [trustScore, setTrustScore] = useState(100);
   const [meetsCount, setMeetsCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [sharesUsed, setSharesUsed] = useState(0);
 
-  // Re-fetch profile every time the tab comes into focus
   useFocusEffect(
     useCallback(() => {
-      if (user) fetchProfile();
+      if (user) {
+        fetchProfile();
+        fetchSharesUsed();
+      }
     }, [user])
   );
 
@@ -41,6 +46,7 @@ export default function ProfileScreen() {
       setTrustScore(data.trust_score);
       setMeetsCount(data.meets_count);
       setIsVerified(data.is_verified ?? false);
+      setIsPremium(data.is_premium ?? false);
     } else {
       await supabase.from("profiles").insert({
         id: user?.id,
@@ -51,13 +57,67 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchSharesUsed = async () => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const { count } = await supabase
+      .from("proof_shares")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user?.id)
+      .gte("created_at", monthStart.toISOString());
+
+    setSharesUsed(count ?? 0);
+  };
+
   const shareProfile = async () => {
-    const profileUrl = `https://trustmeet.app/u/${user?.id}`;
-    const name = handle ? `@${handle}` : "a TrustMeet user";
+    if (!isPremium && sharesUsed >= 5) {
+      Alert.alert(
+        "Limit Reached",
+        "You've used all 5 free ID shares this month. Upgrade to Premium for unlimited sharing.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Go Premium", onPress: () => router.push("/subscribe") },
+        ]
+      );
+      return;
+    }
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const { data: share, error } = await supabase
+      .from("proof_shares")
+      .insert({
+        user_id: user?.id,
+        expires_at: expiresAt.toISOString(),
+        photo_url: photoUrl,
+        handle: handle,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      Alert.alert("Error", error.message);
+      return;
+    }
+
+    const shareUrl = `https://trustmeet.app/proof/${share.id}`;
+    const now = new Date();
+    const timestamp = now.toLocaleString();
+
     try {
       await Share.share({
-        message: `${name} is verified on TrustMeet. View their profile: ${profileUrl}`,
+        message: [
+          `${handle ? `@${handle}` : "A TrustMeet user"} is ID verified on TrustMeet.`,
+          "",
+          `Verification proof: ${shareUrl}`,
+          `Shared: ${timestamp}`,
+          `Expires: ${expiresAt.toLocaleString()}`,
+          "",
+          "This proof link expires in 24 hours.",
+        ].join("\n"),
       });
+      setSharesUsed((prev) => prev + 1);
     } catch {}
   };
 
@@ -65,13 +125,16 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>TrustMeet</Text>
 
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
+      {/* Avatar — tap to upload/verify */}
+      <TouchableOpacity
+        style={styles.avatarContainer}
+        onPress={() => router.push("/verify")}
+      >
         {photoUrl ? (
           <Image source={{ uri: photoUrl }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>No Photo</Text>
+            <Text style={styles.avatarPlaceholderText}>Tap to{"\n"}add photo</Text>
           </View>
         )}
         {isVerified && (
@@ -79,7 +142,7 @@ export default function ProfileScreen() {
             <Text style={styles.verifiedCheck}>✓</Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
 
       {/* Handle */}
       {handle ? (
@@ -98,10 +161,10 @@ export default function ProfileScreen() {
         </View>
       ) : (
         <TouchableOpacity
-          style={styles.getVerifiedButton}
+          style={styles.notVerifiedRow}
           onPress={() => router.push("/verify")}
         >
-          <Text style={styles.getVerifiedText}>Get Verified</Text>
+          <Text style={styles.notVerifiedText}>Not Verified</Text>
         </TouchableOpacity>
       )}
 
@@ -118,13 +181,31 @@ export default function ProfileScreen() {
       </View>
 
       {/* Action Buttons */}
-      <TouchableOpacity style={styles.meetupButton} onPress={() => router.push("/(tabs)/meetup")}>
+      <TouchableOpacity
+        style={styles.meetupButton}
+        onPress={() => router.push("/(tabs)/meetup")}
+      >
         <Text style={styles.meetupButtonText}>Start a Meetup</Text>
       </TouchableOpacity>
 
       {isVerified && (
         <TouchableOpacity style={styles.shareButton} onPress={shareProfile}>
           <Text style={styles.shareButtonText}>Share Proof of ID</Text>
+          {!isPremium && (
+            <Text style={styles.shareCount}>{sharesUsed}/5 free this month</Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {!isPremium && (
+        <TouchableOpacity
+          style={styles.premiumBanner}
+          onPress={() => router.push("/subscribe")}
+        >
+          <Text style={styles.premiumBannerTitle}>Go Premium</Text>
+          <Text style={styles.premiumBannerSub}>
+            Unlimited shares & meetups
+          </Text>
         </TouchableOpacity>
       )}
     </ScrollView>
@@ -165,12 +246,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a1a",
     borderWidth: 2,
     borderColor: "#333",
+    borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: {
+  avatarPlaceholderText: {
     color: "#888",
-    fontSize: 12,
+    fontSize: 13,
     textAlign: "center",
   },
   verifiedBadge: {
@@ -224,17 +306,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  getVerifiedButton: {
-    backgroundColor: "#1a1a1a",
+  notVerifiedRow: {
+    backgroundColor: "#2a1a1a",
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#00e676",
     marginBottom: 24,
   },
-  getVerifiedText: {
-    color: "#00e676",
+  notVerifiedText: {
+    color: "#ff5252",
     fontSize: 14,
     fontWeight: "600",
   },
@@ -286,5 +366,31 @@ const styles = StyleSheet.create({
     color: "#00e676",
     fontSize: 16,
     fontWeight: "600",
+  },
+  shareCount: {
+    color: "#888",
+    fontSize: 11,
+    marginTop: 4,
+  },
+  premiumBanner: {
+    backgroundColor: "#1a1a0a",
+    borderWidth: 1,
+    borderColor: "#ffd600",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    width: "100%",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  premiumBannerTitle: {
+    color: "#ffd600",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  premiumBannerSub: {
+    color: "#aaa",
+    fontSize: 12,
+    marginTop: 2,
   },
 });
