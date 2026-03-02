@@ -42,7 +42,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>TrustMeet</Text>
+        <Text style={styles.title}>ChatVerify</Text>
         <Text style={styles.subtitle}>Verify who you meet in real life</Text>
 
         <TextInput

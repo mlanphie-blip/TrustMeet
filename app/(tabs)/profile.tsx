@@ -21,8 +21,8 @@ export default function ProfileScreen() {
   const [trustScore, setTrustScore] = useState(100);
   const [meetsCount, setMeetsCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
   const [sharesUsed, setSharesUsed] = useState(0);
+  const [isPremium, setIsPremium] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -101,14 +101,14 @@ export default function ProfileScreen() {
       return;
     }
 
-    const shareUrl = `https://trustmeet.app/proof/${share.id}`;
+    const shareUrl = `https://chatverify.app/proof/${share.id}`;
     const now = new Date();
     const timestamp = now.toLocaleString();
 
     try {
       await Share.share({
         message: [
-          `${handle ? `@${handle}` : "A TrustMeet user"} is ID verified on TrustMeet.`,
+          `${handle ? `@${handle}` : "A ChatVerify user"} is ID verified on ChatVerify.`,
           "",
           `Verification proof: ${shareUrl}`,
           `Shared: ${timestamp}`,
@@ -123,7 +123,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>TrustMeet</Text>
+      <Text style={styles.title}>ChatVerify</Text>
 
       {/* Avatar — tap to upload/verify */}
       <TouchableOpacity
@@ -197,17 +197,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
-      {!isPremium && (
-        <TouchableOpacity
-          style={styles.premiumBanner}
-          onPress={() => router.push("/subscribe")}
-        >
-          <Text style={styles.premiumBannerTitle}>Go Premium</Text>
-          <Text style={styles.premiumBannerSub}>
-            Unlimited shares & meetups
-          </Text>
-        </TouchableOpacity>
-      )}
     </ScrollView>
   );
 }
@@ -371,26 +360,5 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 11,
     marginTop: 4,
-  },
-  premiumBanner: {
-    backgroundColor: "#1a1a0a",
-    borderWidth: 1,
-    borderColor: "#ffd600",
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    width: "100%",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  premiumBannerTitle: {
-    color: "#ffd600",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  premiumBannerSub: {
-    color: "#aaa",
-    fontSize: 12,
-    marginTop: 2,
   },
 });

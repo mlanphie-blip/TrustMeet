@@ -232,7 +232,7 @@ export default function VerifyScreen() {
       <View style={styles.container}>
         <Text style={styles.title}>Camera Access Needed</Text>
         <Text style={styles.subtitle}>
-          TrustMeet needs your camera to take a verification selfie.
+          ChatVerify needs your camera to take a verification selfie.
         </Text>
         <TouchableOpacity style={styles.button} onPress={requestPermission}>
           <Text style={styles.buttonText}>Grant Camera Access</Text>

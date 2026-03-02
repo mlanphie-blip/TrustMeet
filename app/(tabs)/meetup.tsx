@@ -158,8 +158,8 @@ export default function MeetupScreen() {
     if (scanned) return;
     setScanned(true);
 
-    // Extract code from QR data (format: "TRUSTMEET:CODE")
-    const code = data.startsWith("TRUSTMEET:") ? data.slice(10) : data;
+    // Extract code from QR data (format: "CHATVERIFY:CODE")
+    const code = data.startsWith("CHATVERIFY:") ? data.slice(11) : data;
     processCode(code);
   };
 
@@ -180,7 +180,7 @@ export default function MeetupScreen() {
 
   // QR code display via web API
   const qrImageUrl = myCode
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`TRUSTMEET:${myCode}`)}`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`CHATVERIFY:${myCode}`)}`
     : null;
 
   if (mode === "generate" && myCode) {
@@ -231,7 +231,7 @@ export default function MeetupScreen() {
           </View>
         </View>
 
-        <Text style={styles.hint}>Point camera at a TrustMeet QR code</Text>
+        <Text style={styles.hint}>Point camera at a ChatVerify QR code</Text>
 
         {scanned && (
           <TouchableOpacity

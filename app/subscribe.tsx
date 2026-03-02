@@ -80,9 +80,9 @@ export default function SubscribeScreen() {
         <Text style={styles.closeText}>Close</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>TrustMeet Premium</Text>
+      <Text style={styles.title}>ChatVerify Premium</Text>
       <Text style={styles.subtitle}>
-        Unlimited access to all TrustMeet features
+        Unlimited access to all ChatVerify features
       </Text>
 
       {/* Current Usage */}
