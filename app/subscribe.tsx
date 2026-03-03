@@ -42,6 +42,7 @@ export default function SubscribeScreen() {
         .from("meet_codes")
         .select("*", { count: "exact", head: true })
         .eq("creator_id", user?.id)
+        .eq("used", true)
         .gte("created_at", monthStart.toISOString()),
     ]);
 

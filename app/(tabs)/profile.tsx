@@ -71,7 +71,7 @@ export default function ProfileScreen() {
     setSharesUsed(count ?? 0);
   };
 
-  const shareProfile = async () => {
+  const checkShareLimit = (): boolean => {
     if (!isPremium && sharesUsed >= 5) {
       Alert.alert(
         "Limit Reached",
@@ -81,17 +81,23 @@ export default function ProfileScreen() {
           { text: "Go Premium", onPress: () => router.push("/subscribe") },
         ]
       );
-      return;
+      return false;
     }
+    return true;
+  };
 
+  const sendShare = async (mode: "full" | "incognito") => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const isIncognito = mode === "incognito";
+
     const { data: share, error } = await supabase
       .from("proof_shares")
       .insert({
         user_id: user?.id,
         expires_at: expiresAt.toISOString(),
-        photo_url: photoUrl,
+        photo_url: isIncognito ? null : photoUrl,
         handle: handle,
+        share_type: mode,
       })
       .select()
       .single();
@@ -102,12 +108,20 @@ export default function ProfileScreen() {
     }
 
     const shareUrl = `https://chatverify.app/proof/${share.id}`;
-    const now = new Date();
-    const timestamp = now.toLocaleString();
+    const timestamp = new Date().toLocaleString();
 
-    try {
-      await Share.share({
-        message: [
+    const message = isIncognito
+      ? [
+          `@${handle || "anonymous"} is a verified human on ChatVerify.`,
+          "",
+          `Verification proof: ${shareUrl}`,
+          `Shared: ${timestamp}`,
+          `Expires: ${expiresAt.toLocaleString()}`,
+          "",
+          "This is an incognito proof — no photo included.",
+          "This proof link expires in 24 hours.",
+        ].join("\n")
+      : [
           `${handle ? `@${handle}` : "A ChatVerify user"} is ID verified on ChatVerify.`,
           "",
           `Verification proof: ${shareUrl}`,
@@ -115,10 +129,29 @@ export default function ProfileScreen() {
           `Expires: ${expiresAt.toLocaleString()}`,
           "",
           "This proof link expires in 24 hours.",
-        ].join("\n"),
-      });
+        ].join("\n");
+
+    try {
+      await Share.share({ message });
       setSharesUsed((prev) => prev + 1);
     } catch {}
+  };
+
+  const shareProfile = () => {
+    if (!checkShareLimit()) return;
+
+    Alert.alert("Share Proof of ID", "Choose how to share your verification.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Incognito",
+        onPress: () => sendShare("incognito"),
+      },
+      {
+        text: "Full Proof",
+        style: "default",
+        onPress: () => sendShare("full"),
+      },
+    ]);
   };
 
   return (

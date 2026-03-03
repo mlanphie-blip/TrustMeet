@@ -42,7 +42,7 @@ export default function MeetupScreen() {
 
     setIsPremium(profile?.is_premium ?? false);
 
-    // Count meetup codes generated this month
+    // Count meetup codes that were actually used this month
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
@@ -51,6 +51,7 @@ export default function MeetupScreen() {
       .from("meet_codes")
       .select("*", { count: "exact", head: true })
       .eq("creator_id", user?.id)
+      .eq("used", true)
       .gte("created_at", monthStart.toISOString());
 
     setMeetupsUsed(count ?? 0);
@@ -98,7 +99,6 @@ export default function MeetupScreen() {
       Alert.alert("Error", error.message);
     } else {
       setMyCode(randomCode);
-      setMeetupsUsed((prev) => prev + 1);
       setMode("generate");
     }
   };
