@@ -71,8 +71,7 @@ export default function ProfileScreen() {
     setSharesUsed(count ?? 0);
   };
 
-  const PROOF_VIEWER_URL =
-    "https://ivjdnrobixctamawajib.supabase.co/functions/v1/proof-viewer";
+  const PROOF_VIEWER_URL = "https://chatverify.netlify.app/proof";
 
   const checkShareLimit = (): boolean => {
     if (!isPremium && sharesUsed >= 5) {
@@ -110,7 +109,7 @@ export default function ProfileScreen() {
       return;
     }
 
-    const shareUrl = `${PROOF_VIEWER_URL}?id=${share.id}`;
+    const shareUrl = `${PROOF_VIEWER_URL}/${share.id}`;
     const timestamp = new Date().toLocaleString();
 
     const message = isIncognito
