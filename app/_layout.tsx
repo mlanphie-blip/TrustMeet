@@ -13,6 +13,10 @@ function RootNavigator() {
 
     const inAuthGroup = segments[0] === "(tabs)";
 
+    // Routes accessible without any authentication
+    const publicRoutes = ["proof"];
+    if (publicRoutes.includes(segments[0] as string)) return;
+
     const allowedOutsideTabs = ["verify", "subscribe"];
 
     if (!user) {
